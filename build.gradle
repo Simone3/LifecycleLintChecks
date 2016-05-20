@@ -1,23 +1,25 @@
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
+apply plugin: 'java'
 
-buildscript {
-    repositories {
-        jcenter()
-    }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:2.1.0'
+repositories {
+    jcenter()
+}
 
-        // NOTE: Do not place your application dependencies here; they belong
-        // in the individual module build.gradle files
+// JDK 1.6 is required to support all versions of Android Studio.
+// See http://tools.android.com/build/studio.
+sourceCompatibility = 1.8
+dependencies {
+    compile 'com.android.tools.lint:lint-api:24.3.1'
+    compile 'com.android.tools.lint:lint-checks:24.3.1'
+    testCompile 'junit:junit:4.11'
+    testCompile 'com.android.tools.lint:lint:24.3.1'
+    testCompile 'com.android.tools.lint:lint-tests:24.3.1'
+    testCompile 'com.android.tools:testutils:24.3.1'
+}
+
+jar {
+    manifest {
+        attributes("Lint-Registry": "registry.LifecycleIssuesRegistry")
     }
 }
 
-allprojects {
-    repositories {
-        jcenter()
-    }
-}
-
-task clean(type: Delete) {
-    delete rootProject.buildDir
-}
+defaultTasks 'assemble'

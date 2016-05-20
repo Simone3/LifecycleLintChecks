@@ -3,8 +3,6 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/LifecycleLintChecks.iml" filepath="$PROJECT_DIR$/LifecycleLintChecks.iml" />
-      <module fileurl="file://$PROJECT_DIR$/example_app/app.iml" filepath="$PROJECT_DIR$/example_app/app.iml" />
-      <module fileurl="file://$PROJECT_DIR$/lifecycle_lint_checks/lifecycle_lint_checks.iml" filepath="$PROJECT_DIR$/lifecycle_lint_checks/lifecycle_lint_checks.iml" />
     </modules>
   </component>
 </project>
