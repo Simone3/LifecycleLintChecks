@@ -1,1 +1,0 @@
-include ':example_app', ':lifecycle_lint_checks'
