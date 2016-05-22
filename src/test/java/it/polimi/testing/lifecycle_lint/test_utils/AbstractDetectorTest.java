@@ -12,21 +12,10 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.security.CodeSource;
 
-/**
- * Abstract class that contains common stuff
- */
 public abstract class AbstractDetectorTest extends LintDetectorTest
 {
-    /**
-     * Our relative path to the test-resources directory, which is used in the getTestResource()
-     * and getTestDataRootDir() methods. Their purpose is to identify the test resource file to be used in
-     * a given test case.
-     */
     protected static final String PATH_TEST_RESOURCES = "/src/test/resources/";
 
-    /**
-     * The default Lint message when nothing is wrong, which we'll need for test comparisons.
-     */
     protected static final String NO_WARNINGS = "No warnings.";
 
     protected abstract String getTestResourceDirectory();

@@ -7,19 +7,16 @@ import java.util.Arrays;
 import java.util.List;
 
 import it.polimi.testing.lifecycle_lint.detectors.BroadcastReceiverDetector;
+import it.polimi.testing.lifecycle_lint.detectors.GoogleApiClientDetector;
 
 
 public class LifecycleIssuesRegistry extends IssueRegistry
 {
     private final static List<Issue> ISSUES = Arrays.asList
     (
-        BroadcastReceiverDetector.ISSUE
+        BroadcastReceiverDetector.ISSUE,
+        GoogleApiClientDetector.ISSUE
     );
-
-    public LifecycleIssuesRegistry()
-    {
-
-    }
 
     @Override
     public List<Issue> getIssues()

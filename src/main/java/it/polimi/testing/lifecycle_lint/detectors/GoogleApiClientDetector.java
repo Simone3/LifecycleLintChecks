@@ -25,10 +25,10 @@ import lombok.ast.Node;
 import static com.android.tools.lint.client.api.JavaParser.ResolvedMethod;
 import static com.android.tools.lint.client.api.JavaParser.ResolvedNode;
 
-public class BroadcastReceiverDetector extends Detector implements Detector.JavaScanner
+public class GoogleApiClientDetector extends Detector implements Detector.JavaScanner
 {
     // Issue implementation
-    private static final Class<? extends Detector> DETECTOR_CLASS = BroadcastReceiverDetector.class;
+    private static final Class<? extends Detector> DETECTOR_CLASS = GoogleApiClientDetector.class;
     private static final EnumSet<Scope> DETECTOR_SCOPE = Scope.JAVA_FILE_SCOPE;
     private static final Implementation IMPLEMENTATION = new Implementation(
         DETECTOR_CLASS,
@@ -36,12 +36,12 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
     );
 
     // Issue description
-    private static final String ISSUE_ID = "BroadcastReceiverLifecycle";
-    private static final String ISSUE_DESCRIPTION = "Incorrect `BroadcastReceiver` lifecycle handling";
-    private static final String ISSUE_EXPLANATION = "Calls to register and unregister of BroadcastReceiver components should be done carefully, "+
-                                                    "i.e. you should avoid registering twice (otherwise you'll receive the events twice), always "+
-                                                    "unregister it to avoid leaks, etc.";
-    private static final String MORE_INFO_URL = "https://developer.android.com/reference/android/content/BroadcastReceiver.html";
+    private static final String ISSUE_ID = "GoogleApiClientLifecycle";
+    private static final String ISSUE_DESCRIPTION = "Incorrect `GoogleApiClient` lifecycle handling";
+    private static final String ISSUE_EXPLANATION = "You should always disconnect a GoogleApiClient when you are done with it. "+
+                                                    "For activities and fragments in most cases connection is done during onStart and "+
+                                                    "disconnection during onStop().";
+    private static final String MORE_INFO_URL = "https://developers.google.com/android/reference/com/google/android/gms/common/api/GoogleApiClient#nested-class-summary";
 
     // Issue category
     private static final Category ISSUE_CATEGORY = Category.PERFORMANCE;
@@ -61,14 +61,15 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
     ).addMoreInfo(MORE_INFO_URL);
 
     // Methods and classes related to the issue
-    public static final String LOCAL_BROADCAST_MANAGER = "android.support.v4.content.LocalBroadcastManager";
-    private static final String REGISTER_METHOD = "registerReceiver";
-    private static final String UNREGISTER_METHOD = "unregisterReceiver";
+    private static final String GOOGLE_API_CLIENT = "com.google.android.gms.common.api.GoogleApiClient";
+    private static final String CONNECT_METHOD = "connect";
+    private static final String DISCONNECT_METHOD = "disconnect";
+    private static final String ON_CONNECTION_FAILED_METHOD = "onConnectionFailed";
 
     // Flags and data used in the search
-    private static boolean foundRegister = false;
-    private static MethodInvocation registerNode;
-    private static boolean foundUnregister = false;
+    private static boolean foundConnect = false;
+    private static MethodInvocation connectNode;
+    private static boolean foundDisconnect = false;
 
     /**
      * {@inheritDoc}
@@ -105,13 +106,13 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
     @Override
     public List<String> getApplicableMethodNames()
     {
-        return Arrays.asList(REGISTER_METHOD, UNREGISTER_METHOD);
+        return Arrays.asList(CONNECT_METHOD, DISCONNECT_METHOD);
     }
 
     /**
      * {@inheritDoc}
      *
-     * Here, for every file, we check that registrations and unregistrations are consistent
+     * Here, for every file, we check that connections and disconnections are consistent
      */
     @Override
     public void afterCheckFile(@NonNull Context c)
@@ -119,16 +120,16 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
         if(!(c instanceof JavaContext)) return;
         JavaContext context = (JavaContext) c;
 
-        // Create issue if we found a register but no unregister
-        if(foundRegister && !foundUnregister)
+        // Create issue if we found a connection but no disconnection
+        if(foundConnect && !foundDisconnect)
         {
-            context.report(ISSUE, registerNode, context.getLocation(registerNode.astName()), "Found a BroadcastReceiver `"+REGISTER_METHOD+"()` but no `"+UNREGISTER_METHOD+"()` calls in the class");
+            context.report(ISSUE, connectNode, context.getLocation(connectNode.astName()), "Found a GoogleApiClient `"+CONNECT_METHOD+"()` but no `"+DISCONNECT_METHOD+"()` calls in the class");
         }
 
         // Reset variables for next files
-        foundRegister = false;
-        foundUnregister = false;
-        registerNode = null;
+        foundConnect = false;
+        foundDisconnect = false;
+        connectNode = null;
     }
 
     /**
@@ -168,76 +169,53 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
                 return false;
             }
 
-            System.out.println("--- Method "+methodInvocation);
-
             // Resolve node
             ResolvedNode resolved = context.resolve(methodInvocation);
             if(resolved==null || !(resolved instanceof ResolvedMethod))
             {
-                System.out.println("Cannot resolve...");
                 return false;
             }
 
             // Check if we are interested in the class that contains this method
             ResolvedMethod method = (ResolvedMethod) resolved;
-            if(!isContainingClassValid(method))
+            if(!Utils.isMethodContainedInSubclassOf(method, GOOGLE_API_CLIENT))
             {
                 return false;
             }
 
-            // Set flag and save some data if it's the register method
+            // If it's the connection method...
             String name = method.getName();
-            if(REGISTER_METHOD.equals(name))
+            if(CONNECT_METHOD.equals(name))
             {
-                if(!foundRegister)
+                foundConnect = true;
+                connectNode = methodInvocation;
+
+                // Issue if we are in an activity or fragment and this is not called during onStart
+                if(Utils.isCalledInActivityOrFragment(context, methodInvocation))
                 {
-                    foundRegister = true;
-                    registerNode = methodInvocation;
-                }
-                else
-                {
-                    context.report(ISSUE, methodInvocation, context.getLocation(methodInvocation.astName()), "You may be calling "+REGISTER_METHOD+"() more than once: in that case you'll receive each broadcast multiple times");
+                    String callerMethod = Utils.getCallerMethodName(methodInvocation);
+
+                    if(!Utils.ON_START_METHOD.equals(callerMethod) && !ON_CONNECTION_FAILED_METHOD.equals(callerMethod))
+                    {
+                        context.report(ISSUE, methodInvocation, context.getLocation(methodInvocation.astName()), "The best practice is to call the GoogleApiClient "+CONNECT_METHOD+"() during "+Utils.ON_START_METHOD+"()");
+                    }
                 }
             }
 
             // If it's the unregister method...
-            else if(UNREGISTER_METHOD.equals(name))
+            else if(DISCONNECT_METHOD.equals(name))
             {
                 // Set flag
-                foundUnregister = true;
+                foundDisconnect = true;
 
-                // Issue if this is called during onSaveInstanceState
-                if(isCalledDuringOnSaveInstanceState(methodInvocation))
+                // Issue if we are in an activity or a fragment and this is not called during onStart
+                if(Utils.isCalledInActivityOrFragment(context, methodInvocation) && !Utils.ON_STOP_METHOD.equals(Utils.getCallerMethodName(methodInvocation)))
                 {
-                    context.report(ISSUE, methodInvocation, context.getLocation(methodInvocation.astName()), "You should not call "+UNREGISTER_METHOD+"() during "+Utils.ON_SAVE_INSTANCE_STATE_METHOD+"() because it won't be called if the user moves back in the history stack");
+                    context.report(ISSUE, methodInvocation, context.getLocation(methodInvocation.astName()), "The best practice is to call the GoogleApiClient "+DISCONNECT_METHOD+"() during "+Utils.ON_STOP_METHOD+"()");
                 }
             }
 
             return super.visitMethodInvocation(methodInvocation);
-        }
-
-        /**
-         * Checks if we are analyzing the "onSaveInstance" method
-         * @param methodInvocation the method invocation we are interested in
-         * @return true if we are analyzing the "onSaveInstance" method
-         */
-        private boolean isCalledDuringOnSaveInstanceState(MethodInvocation methodInvocation)
-        {
-            return Utils.ON_SAVE_INSTANCE_STATE_METHOD.equals(Utils.getCallerMethodName(methodInvocation));
-        }
-
-        /**
-         * Checks if we are interested in the containing class of the method
-         * @param method the method to check
-         * @return true if we are interested in the containing class of the method
-         */
-        private boolean isContainingClassValid(ResolvedMethod method)
-        {
-            return
-            /* Global BroadcastReceiver (method of ContextWrapper, e.g. Activity) */
-            Utils.isMethodContainedInSubclassOf(method, Utils.CONTEXT_WRAPPER) ||
-            /* Local BroadcastReceiver (method of LocalBroadcastManager) */
-            Utils.isMethodContainedInSubclassOf(method, LOCAL_BROADCAST_MANAGER);
         }
     }
 }

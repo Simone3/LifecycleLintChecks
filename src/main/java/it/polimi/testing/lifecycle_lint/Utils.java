@@ -1,6 +1,7 @@
 package it.polimi.testing.lifecycle_lint;
 
 import com.android.tools.lint.client.api.JavaParser;
+import com.android.tools.lint.detector.api.JavaContext;
 
 import lombok.ast.Expression;
 import lombok.ast.MethodDeclaration;
@@ -14,6 +15,12 @@ import lombok.ast.StrictListAccessor;
 public class Utils
 {
     public final static String ON_SAVE_INSTANCE_STATE_METHOD = "onSaveInstanceState";
+    public final static String ON_START_METHOD = "onStart";
+    public final static String ON_STOP_METHOD = "onStop";
+
+    public static final String CONTEXT_WRAPPER = "android.content.ContextWrapper";
+    public static final String FRAGMENT_APP = "android.app.Fragment";
+    public static final String FRAGMENT_SUPPORT = "android.support.v4.app.Fragment";
 
     /**
      * Checks if a method belongs to the given class (or one of its subclasses)
@@ -31,7 +38,19 @@ public class Utils
      * @param methodInvocation the method invocation we are interested in
      * @return the name of the method that called the given method
      */
-    public static String getCallerMethod(MethodInvocation methodInvocation)
+    public static String getCallerMethodName(MethodInvocation methodInvocation)
+    {
+        MethodDeclaration methodDeclaration = getCallerMethod(methodInvocation);
+        if(methodDeclaration==null) return "";
+        else return methodDeclaration.astMethodName().astValue();
+    }
+
+    /**
+     * Gets the method in the class that originated the call to the given method
+     * @param methodInvocation the method invocation we are interested in
+     * @return the method that called the given method
+     */
+    private static MethodDeclaration getCallerMethod(MethodInvocation methodInvocation)
     {
         MethodDeclaration methodDeclaration = null;
         Node parent = methodInvocation;
@@ -47,8 +66,7 @@ public class Utils
                 break;
             }
         }
-        if(methodDeclaration==null) return "";
-        else return methodDeclaration.astMethodName().astValue();
+        return methodDeclaration;
     }
 
     /**
@@ -70,5 +88,89 @@ public class Utils
             }
         }
         return "";
+    }
+
+    /**
+     * Helper that calls getCallerMethod() and then resolves the returned value
+     * @param context the context of the lint request
+     * @param methodInvocation the method invocation
+     * @return the resolved node of the caller method
+     */
+    private static JavaParser.ResolvedMethod getCallerResolvedMethod(JavaContext context, MethodInvocation methodInvocation)
+    {
+        // Get class method that contains the given invocation
+        MethodDeclaration methodDeclaration = getCallerMethod(methodInvocation);
+        if(methodDeclaration==null) return null;
+
+        // Resolve node
+        JavaParser.ResolvedNode resolved = context.resolve(methodDeclaration);
+        if(resolved==null || !(resolved instanceof JavaParser.ResolvedMethod))
+        {
+            return null;
+        }
+        else
+        {
+            return (JavaParser.ResolvedMethod) resolved;
+        }
+    }
+
+    /**
+     * Checks if the given method is called inside an activity
+     * @param context the context of the lint request
+     * @param methodInvocation the method invocation
+     * @return true if the given method is called inside an activity
+     */
+    public static boolean isCalledInActivity(JavaContext context, MethodInvocation methodInvocation)
+    {
+        // Get class method that contains the given invocation
+        JavaParser.ResolvedMethod method = getCallerResolvedMethod(context, methodInvocation);
+        if(method==null)
+        {
+            return false;
+        }
+
+        // Check if it's an activity
+        return Utils.isMethodContainedInSubclassOf(method, CONTEXT_WRAPPER);
+    }
+
+    /**
+     * Checks if the given method is called inside a fragment
+     * @param context the context of the lint request
+     * @param methodInvocation the method invocation
+     * @return true if the given method is called inside a fragment
+     */
+    public static boolean isCalledInFragment(JavaContext context, MethodInvocation methodInvocation)
+    {
+        // Get class method that contains the given invocation
+        JavaParser.ResolvedMethod method = getCallerResolvedMethod(context, methodInvocation);
+        if(method==null)
+        {
+            return false;
+        }
+
+        // Check if it's a fragment
+        return Utils.isMethodContainedInSubclassOf(method, FRAGMENT_APP) ||
+                Utils.isMethodContainedInSubclassOf(method, FRAGMENT_SUPPORT);
+    }
+
+    /**
+     * Checks if the given method is called inside a fragment or an activity
+     * @param context the context of the lint request
+     * @param methodInvocation the method invocation
+     * @return true if the given method is called inside a fragment or an activity
+     */
+    public static boolean isCalledInActivityOrFragment(JavaContext context, MethodInvocation methodInvocation)
+    {
+        // Get class method that contains the given invocation
+        JavaParser.ResolvedMethod method = getCallerResolvedMethod(context, methodInvocation);
+        if(method==null)
+        {
+            return false;
+        }
+
+        // Check if it's a fragment or an activity
+        return Utils.isMethodContainedInSubclassOf(method, CONTEXT_WRAPPER) ||
+                Utils.isMethodContainedInSubclassOf(method, FRAGMENT_APP) ||
+                Utils.isMethodContainedInSubclassOf(method, FRAGMENT_SUPPORT);
     }
 }
