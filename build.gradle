@@ -18,8 +18,21 @@ dependencies {
 
 jar {
     manifest {
-        attributes("Lint-Registry": "registry.LifecycleIssuesRegistry")
+        attributes("Lint-Registry": "it.polimi.testing.lifecycle_lint.registry.LifecycleIssuesRegistry")
     }
 }
 
+configurations {
+    lintChecks
+}
+
+dependencies {
+    lintChecks files(jar)
+}
+
 defaultTasks 'assemble'
+
+task install(type: Copy) {
+    from configurations.lintChecks
+    into System.getProperty('user.home') + '/.android/lint/'
+}
