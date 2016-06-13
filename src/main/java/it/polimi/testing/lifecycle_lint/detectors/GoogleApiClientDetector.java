@@ -102,15 +102,6 @@ public class GoogleApiClientDetector extends Detector implements Detector.JavaSc
 
     /**
      * {@inheritDoc}
-     */
-    @Override
-    public List<String> getApplicableMethodNames()
-    {
-        return Arrays.asList(CONNECT_METHOD, DISCONNECT_METHOD);
-    }
-
-    /**
-     * {@inheritDoc}
      *
      * Here, for every file, we check that connections and disconnections are consistent
      */
@@ -123,7 +114,7 @@ public class GoogleApiClientDetector extends Detector implements Detector.JavaSc
         // Create issue if we found a connection but no disconnection
         if(foundConnect && !foundDisconnect)
         {
-            context.report(ISSUE, connectNode, context.getLocation(connectNode.astName()), "Found a GoogleApiClient `"+CONNECT_METHOD+"()` but no `"+DISCONNECT_METHOD+"()` calls in the class");
+            context.report(ISSUE, connectNode, context.getLocation(connectNode.astName()), "Found a `GoogleApiClient` `"+CONNECT_METHOD+"()` but no `"+DISCONNECT_METHOD+"()` calls in the class");
         }
 
         // Reset variables for next files
@@ -158,6 +149,15 @@ public class GoogleApiClientDetector extends Detector implements Detector.JavaSc
         }
 
         /**
+         * Getter
+         * @return the names of the methods we are interested in
+         */
+        private List<String> getApplicableMethodNames()
+        {
+            return Arrays.asList(CONNECT_METHOD, DISCONNECT_METHOD);
+        }
+
+        /**
          * {@inheritDoc}
          */
         @Override
@@ -165,6 +165,12 @@ public class GoogleApiClientDetector extends Detector implements Detector.JavaSc
         {
             // If this is a library project not being analyzed, ignore it
             if(!context.getProject().getReportIssues())
+            {
+                return false;
+            }
+
+            // Only applicable methods (filter before resolving, for performance)
+            if(!getApplicableMethodNames().contains(methodInvocation.astName().astValue()))
             {
                 return false;
             }
@@ -197,21 +203,20 @@ public class GoogleApiClientDetector extends Detector implements Detector.JavaSc
 
                     if(!Utils.ON_START_METHOD.equals(callerMethod) && !ON_CONNECTION_FAILED_METHOD.equals(callerMethod))
                     {
-                        context.report(ISSUE, methodInvocation, context.getLocation(methodInvocation.astName()), "The best practice is to call the GoogleApiClient "+CONNECT_METHOD+"() during "+Utils.ON_START_METHOD+"()");
+                        context.report(ISSUE, methodInvocation, context.getLocation(methodInvocation.astName()), "The best practice is to call the `GoogleApiClient` `"+CONNECT_METHOD+"()` during `"+Utils.ON_START_METHOD+"()`");
                     }
                 }
             }
 
-            // If it's the unregister method...
+            // If it's the disconnect method...
             else if(DISCONNECT_METHOD.equals(name))
             {
-                // Set flag
                 foundDisconnect = true;
 
                 // Issue if we are in an activity or a fragment and this is not called during onStart
                 if(Utils.isCalledInActivityOrFragment(context, methodInvocation) && !Utils.ON_STOP_METHOD.equals(Utils.getCallerMethodName(methodInvocation)))
                 {
-                    context.report(ISSUE, methodInvocation, context.getLocation(methodInvocation.astName()), "The best practice is to call the GoogleApiClient "+DISCONNECT_METHOD+"() during "+Utils.ON_STOP_METHOD+"()");
+                    context.report(ISSUE, methodInvocation, context.getLocation(methodInvocation.astName()), "The best practice is to call the `GoogleApiClient` `"+DISCONNECT_METHOD+"()` during `"+Utils.ON_STOP_METHOD+"()`");
                 }
             }
 

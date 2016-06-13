@@ -11,10 +11,13 @@ import com.android.tools.lint.detector.api.Scope;
 import com.android.tools.lint.detector.api.Severity;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import it.polimi.testing.lifecycle_lint.Utils;
 import lombok.ast.AstVisitor;
@@ -39,7 +42,7 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
     private static final String ISSUE_ID = "BroadcastReceiverLifecycle";
     private static final String ISSUE_DESCRIPTION = "Incorrect `BroadcastReceiver` lifecycle handling";
     private static final String ISSUE_EXPLANATION = "Calls to register and unregister of BroadcastReceiver components should be done carefully, "+
-                                                    "i.e. you should avoid registering twice (otherwise you'll receive the events twice), always "+
+                                                    "i.e. you should avoid unregistering twice (otherwise you'll receive an exception), always "+
                                                     "unregister it to avoid leaks, etc.";
     private static final String MORE_INFO_URL = "https://developer.android.com/reference/android/content/BroadcastReceiver.html";
 
@@ -65,10 +68,9 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
     private static final String REGISTER_METHOD = "registerReceiver";
     private static final String UNREGISTER_METHOD = "unregisterReceiver";
 
-    // Flags and data used in the search
-    private static boolean foundRegister = false;
-    private static MethodInvocation registerNode;
-    private static boolean foundUnregister = false;
+    // Data used during the search
+    private static Map<String, MethodInvocation> registrations = new HashMap<>();
+    private static List<String> unregistrations = new ArrayList<>();
 
     /**
      * {@inheritDoc}
@@ -101,15 +103,6 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
 
     /**
      * {@inheritDoc}
-     */
-    @Override
-    public List<String> getApplicableMethodNames()
-    {
-        return Arrays.asList(REGISTER_METHOD, UNREGISTER_METHOD);
-    }
-
-    /**
-     * {@inheritDoc}
      *
      * Here, for every file, we check that registrations and unregistrations are consistent
      */
@@ -120,15 +113,17 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
         JavaContext context = (JavaContext) c;
 
         // Create issue if we found a register but no unregister
-        if(foundRegister && !foundUnregister)
+        for(Map.Entry<String, MethodInvocation> entry: registrations.entrySet())
         {
-            context.report(ISSUE, registerNode, context.getLocation(registerNode.astName()), "Found a BroadcastReceiver `"+REGISTER_METHOD+"()` but no `"+UNREGISTER_METHOD+"()` calls in the class");
+            if(!unregistrations.contains(entry.getKey()))
+            {
+                context.report(ISSUE, entry.getValue(), context.getLocation(entry.getValue().astName()), "Found a `BroadcastReceiver` `"+REGISTER_METHOD+"()` but no `"+UNREGISTER_METHOD+"()` calls in the class");
+            }
         }
 
         // Reset variables for next files
-        foundRegister = false;
-        foundUnregister = false;
-        registerNode = null;
+        registrations.clear();
+        unregistrations.clear();
     }
 
     /**
@@ -157,6 +152,15 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
         }
 
         /**
+         * Getter
+         * @return the names of the methods we are interested in
+         */
+        private List<String> getApplicableMethodNames()
+        {
+            return Arrays.asList(REGISTER_METHOD, UNREGISTER_METHOD);
+        }
+
+        /**
          * {@inheritDoc}
          */
         @Override
@@ -168,13 +172,16 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
                 return false;
             }
 
-            System.out.println("--- Method "+methodInvocation);
+            // Only applicable methods (filter before resolving, for performance)
+            if(!getApplicableMethodNames().contains(methodInvocation.astName().astValue()))
+            {
+                return false;
+            }
 
             // Resolve node
             ResolvedNode resolved = context.resolve(methodInvocation);
             if(resolved==null || !(resolved instanceof ResolvedMethod))
             {
-                System.out.println("Cannot resolve...");
                 return false;
             }
 
@@ -189,27 +196,28 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
             String name = method.getName();
             if(REGISTER_METHOD.equals(name))
             {
-                if(!foundRegister)
-                {
-                    foundRegister = true;
-                    registerNode = methodInvocation;
-                }
-                else
-                {
-                    context.report(ISSUE, methodInvocation, context.getLocation(methodInvocation.astName()), "You may be calling "+REGISTER_METHOD+"() more than once: in that case you'll receive each broadcast multiple times");
-                }
+                registrations.put(Utils.getMethodInvocationArgumentName(methodInvocation, 0), methodInvocation);
             }
 
             // If it's the unregister method...
             else if(UNREGISTER_METHOD.equals(name))
             {
-                // Set flag
-                foundUnregister = true;
+                String broadcastReceiverVariable = Utils.getMethodInvocationArgumentName(methodInvocation, 0);
+
+                // Issue if found unregister() twice
+                if(unregistrations.contains(broadcastReceiverVariable))
+                {
+                    context.report(ISSUE, methodInvocation, context.getLocation(methodInvocation.astName()), "You may be calling `"+UNREGISTER_METHOD+"()` more than once: if they are called in sequence, you'll get an `IllegalArgumentException`");
+                }
+                else
+                {
+                    unregistrations.add(broadcastReceiverVariable);
+                }
 
                 // Issue if this is called during onSaveInstanceState
                 if(isCalledDuringOnSaveInstanceState(methodInvocation))
                 {
-                    context.report(ISSUE, methodInvocation, context.getLocation(methodInvocation.astName()), "You should not call "+UNREGISTER_METHOD+"() during "+Utils.ON_SAVE_INSTANCE_STATE_METHOD+"() because it won't be called if the user moves back in the history stack");
+                    context.report(ISSUE, methodInvocation, context.getLocation(methodInvocation.astName()), "You should not call `"+UNREGISTER_METHOD+"()` during `"+Utils.ON_SAVE_INSTANCE_STATE_METHOD+"()` because it won't be called if the user moves back in the history stack");
                 }
             }
 
