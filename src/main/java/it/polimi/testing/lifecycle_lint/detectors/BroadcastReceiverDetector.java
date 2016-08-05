@@ -76,7 +76,7 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
     // Data used during the search
     private static Map<String, MethodInvocation> registrations = new HashMap<>();
     private static Map<String, List<MethodInvocation>> unregistrations = new HashMap<>();
-    
+
     /**
      * {@inheritDoc}
      */

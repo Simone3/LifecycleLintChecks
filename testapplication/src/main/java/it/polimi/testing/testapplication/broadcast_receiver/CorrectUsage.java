@@ -1,14 +1,25 @@
-package it.polimi.lifecycle_lint;
+package it.polimi.testing.testapplication.broadcast_receiver;
 
-public class CorrectUsageTestCase extends Activity
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.Bundle;
+import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
+
+import it.polimi.testing.testapplication.R;
+
+
+public class CorrectUsage extends AppCompatActivity
 {
-    private BroadcastReceiver broadcastReceiver = new BroadcastReceiver()
+    private final BroadcastReceiver broadcastReceiver = new BroadcastReceiver()
     {
         @Override
         public void onReceive(Context context, Intent intent)
         {
             String message = intent.getStringExtra("message");
-            Log.d("receiver", "Got message: "+message);
+            Log.d("receiver", "Got message: "+message+", "+Test.A+","+Test.B);
         }
     };
 
@@ -16,7 +27,7 @@ public class CorrectUsageTestCase extends Activity
     public void onCreate(Bundle savedInstanceState)
     {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.main);
+        setContentView(R.layout.activity_main);
     }
 
     @Override

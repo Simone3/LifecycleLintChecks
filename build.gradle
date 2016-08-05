@@ -1,5 +1,14 @@
 apply plugin: 'java'
 
+buildscript {
+    repositories {
+        jcenter()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:2.1.2'
+    }
+}
+
 repositories {
     jcenter()
 }
@@ -35,4 +44,10 @@ defaultTasks 'assemble'
 task install(type: Copy) {
     from configurations.lintChecks
     into System.getProperty('user.home') + '/.android/lint/'
+}
+
+allprojects {
+    repositories {
+        jcenter()
+    }
 }
