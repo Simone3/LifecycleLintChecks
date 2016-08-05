@@ -1,6 +1,7 @@
 package it.polimi.testing.lifecycle_lint.detectors;
 
 import com.android.annotations.NonNull;
+import com.android.tools.lint.client.api.JavaParser;
 import com.android.tools.lint.detector.api.Category;
 import com.android.tools.lint.detector.api.Context;
 import com.android.tools.lint.detector.api.Detector;
@@ -21,12 +22,16 @@ import java.util.Map;
 
 import it.polimi.testing.lifecycle_lint.Utils;
 import lombok.ast.AstVisitor;
+import lombok.ast.Catch;
 import lombok.ast.ForwardingAstVisitor;
 import lombok.ast.MethodInvocation;
 import lombok.ast.Node;
+import lombok.ast.Try;
+import lombok.ast.TypeReference;
 
 import static com.android.tools.lint.client.api.JavaParser.ResolvedMethod;
 import static com.android.tools.lint.client.api.JavaParser.ResolvedNode;
+import static com.android.tools.lint.detector.api.JavaContext.getParentOfType;
 
 public class BroadcastReceiverDetector extends Detector implements Detector.JavaScanner
 {
@@ -70,8 +75,8 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
 
     // Data used during the search
     private static Map<String, MethodInvocation> registrations = new HashMap<>();
-    private static List<String> unregistrations = new ArrayList<>();
-
+    private static Map<String, List<MethodInvocation>> unregistrations = new HashMap<>();
+    
     /**
      * {@inheritDoc}
      */
@@ -112,12 +117,29 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
         if(!(c instanceof JavaContext)) return;
         JavaContext context = (JavaContext) c;
 
-        // Create issue if we found a register but no unregister
+        // Create issue if we found a register but no unregister for a given variable
         for(Map.Entry<String, MethodInvocation> entry: registrations.entrySet())
         {
-            if(!unregistrations.contains(entry.getKey()))
+            if(!unregistrations.keySet().contains(entry.getKey()))
             {
                 context.report(ISSUE, entry.getValue(), context.getLocation(entry.getValue().astName()), "Found a `BroadcastReceiver` `"+REGISTER_METHOD+"()` but no `"+UNREGISTER_METHOD+"()` calls in the class");
+            }
+        }
+
+        // For each variable unregistered...
+        for(Map.Entry<String, List<MethodInvocation>> entry: unregistrations.entrySet())
+        {
+            // If we found more than one unregister...
+            if(entry.getValue()!=null && entry.getValue().size()>1)
+            {
+                // Issue for those that are not inside a try/catch
+                for(MethodInvocation methodInvocation: entry.getValue())
+                {
+                    if(methodInvocation!=null)
+                    {
+                        context.report(ISSUE, methodInvocation, context.getLocation(methodInvocation.astName()), "Multiple `"+UNREGISTER_METHOD+"()` detected: it is advisable to catch `IllegalArgumentException` in each of them, otherwise if they are called in sequence the application will crash");
+                    }
+                }
             }
         }
 
@@ -132,13 +154,13 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
     @Override
     public AstVisitor createJavaVisitor(@NonNull JavaContext context)
     {
-        return new Checker(context);
+        return new BroadcastReceiverVisitor(context);
     }
 
     /**
      * Custom AST Visitor that receives method invocation calls
      */
-    private static class Checker extends ForwardingAstVisitor
+    private static class BroadcastReceiverVisitor extends ForwardingAstVisitor
     {
         private final JavaContext context;
 
@@ -146,7 +168,7 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
          * Constructor
          * @param context the context of the lint request
          */
-        public Checker(JavaContext context)
+        public BroadcastReceiverVisitor(JavaContext context)
         {
             this.context = context;
         }
@@ -204,15 +226,49 @@ public class BroadcastReceiverDetector extends Detector implements Detector.Java
             {
                 String broadcastReceiverVariable = Utils.getMethodInvocationArgumentName(methodInvocation, 0);
 
-                // Issue if found unregister() twice
-                if(unregistrations.contains(broadcastReceiverVariable))
+                // Check if the unregistration is inside a try/catch block
+                boolean isInTryCatch;
+                Node parent = methodInvocation;
+                whileLoop: while(true)
                 {
-                    context.report(ISSUE, methodInvocation, context.getLocation(methodInvocation.astName()), "You may be calling `"+UNREGISTER_METHOD+"()` more than once: if they are called in sequence, you'll get an `IllegalArgumentException`");
+                    Try tryCatch = getParentOfType(parent, Try.class);
+                    if(tryCatch==null)
+                    {
+                        isInTryCatch = false;
+                        break;
+                    }
+                    else
+                    {
+                        for(Catch aCatch: tryCatch.astCatches())
+                        {
+                            TypeReference typeReference = aCatch.astExceptionDeclaration().astTypeReference();
+                            JavaParser.TypeDescriptor typeDescriptor = context.getType(typeReference);
+                            if(typeDescriptor!=null &&
+                                    (typeDescriptor.matchesSignature("java.lang.IllegalArgumentException") ||
+                                    typeDescriptor.matchesSignature("java.lang.RuntimeException") ||
+                                    typeDescriptor.matchesSignature("java.lang.Exception") ||
+                                    typeDescriptor.matchesSignature("java.lang.Throwable")))
+                            {
+                                isInTryCatch = true;
+                                break whileLoop;
+                            }
+                        }
+                        parent = tryCatch;
+                    }
                 }
-                else
+
+                // Save unregistration in global field (need node handle only if it's not in a try/catch)
+                List<MethodInvocation> list = null;
+                if(unregistrations.containsKey(broadcastReceiverVariable))
                 {
-                    unregistrations.add(broadcastReceiverVariable);
+                    list = unregistrations.get(broadcastReceiverVariable);
                 }
+                if(list==null)
+                {
+                    list = new ArrayList<>();
+                    unregistrations.put(broadcastReceiverVariable, list);
+                }
+                list.add(isInTryCatch ? null : methodInvocation);
 
                 // Issue if this is called during onSaveInstanceState
                 if(isCalledDuringOnSaveInstanceState(methodInvocation))

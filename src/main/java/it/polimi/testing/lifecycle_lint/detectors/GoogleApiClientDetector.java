@@ -129,13 +129,13 @@ public class GoogleApiClientDetector extends Detector implements Detector.JavaSc
     @Override
     public AstVisitor createJavaVisitor(@NonNull JavaContext context)
     {
-        return new Checker(context);
+        return new GoogleApiClientVisitor(context);
     }
 
     /**
      * Custom AST Visitor that receives method invocation calls
      */
-    private static class Checker extends ForwardingAstVisitor
+    private static class GoogleApiClientVisitor extends ForwardingAstVisitor
     {
         private final JavaContext context;
 
@@ -143,7 +143,7 @@ public class GoogleApiClientDetector extends Detector implements Detector.JavaSc
          * Constructor
          * @param context the context of the lint request
          */
-        public Checker(JavaContext context)
+        public GoogleApiClientVisitor(JavaContext context)
         {
             this.context = context;
         }
